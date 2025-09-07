@@ -19,15 +19,15 @@ CREATE_BAR_TABLE_SCRIPT = f"""
 dataPath = "{DB_PATH}"
 db = database(dataPath)
 
-bar_columns = ["symbol", "exchange", "datetime", "interval", "volume", "turnover", "open_interest", "open_price", "high_price", "low_price", "close_price"]
-bar_type = [SYMBOL, SYMBOL, NANOTIMESTAMP, SYMBOL, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE]
+bar_columns = ["symbol", "exchange", "datetime", "interval", "adjust", "volume", "turnover", "open_interest", "open_price", "high_price", "low_price", "close_price"]
+bar_type = [SYMBOL, SYMBOL, NANOTIMESTAMP, SYMBOL, SYMBOL, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE]
 bar = table(1:0, bar_columns, bar_type)
 
 db.createPartitionedTable(
     bar,
     "bar",
     partitionColumns=["datetime"],
-    sortColumns=["symbol", "exchange", "interval", "datetime"],
+    sortColumns=["symbol", "exchange", "interval", "adjust", "datetime"],
     keepDuplicates=LAST)
 """
 
@@ -63,14 +63,14 @@ CREATE_BAROVERVIEW_TABLE_SCRIPT = f"""
 dataPath = "{DB_PATH}"
 db = database(dataPath)
 
-overview_columns = ["symbol", "exchange", "interval", "count", "start", "end", "datetime"]
-overview_type = [SYMBOL, SYMBOL, SYMBOL, INT, NANOTIMESTAMP, NANOTIMESTAMP, NANOTIMESTAMP]
+overview_columns = ["symbol", "exchange", "interval", "adjust", "count", "start", "end", "datetime"]
+overview_type = [SYMBOL, SYMBOL, SYMBOL, SYMBOL, INT, NANOTIMESTAMP, NANOTIMESTAMP, NANOTIMESTAMP]
 baroverview = table(1:0, overview_columns, overview_type)
 db.createPartitionedTable(
     baroverview,
     "baroverview",
     partitionColumns=["datetime"],
-    sortColumns=["symbol", "exchange", "interval", "datetime"],
+    sortColumns=["symbol", "exchange", "interval", "adjust", "datetime"],
     keepDuplicates=LAST)
 """
 

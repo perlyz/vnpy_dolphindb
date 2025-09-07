@@ -24,6 +24,10 @@ from .dolphindb_script import (
     CREATE_TICKOVERVIEW_TABLE_SCRIPT
 )
 
+ADJUST = SETTINGS["data.adjust"]
+if ADJUST not in ["", "qfq", "hfq"]:
+    valid_options = "'qfq' (前复权) or 'hfq' (后复权) or '' (不复权)"
+    raise ValueError(f"无效的数据复权类型: '{ADJUST}'。请使用 {valid_options}")
 
 class DolphindbDatabase(BaseDatabase):
     """DolphinDB数据库接口"""
@@ -75,6 +79,7 @@ class DolphindbDatabase(BaseDatabase):
                 "exchange": exchange.value,
                 "datetime": dt,
                 "interval": interval.value,
+                "adjust": ADJUST,
                 "volume": float(bar.volume),
                 "turnover": float(bar.turnover),
                 "open_interest": float(bar.open_interest),
@@ -100,6 +105,7 @@ class DolphindbDatabase(BaseDatabase):
             .where(f'symbol="{symbol}"')
             .where(f'exchange="{exchange.value}"')
             .where(f'interval="{interval.value}"')
+            .where(f'adjust="{ADJUST}"')
             .toDF()
         )
 
@@ -125,6 +131,7 @@ class DolphindbDatabase(BaseDatabase):
                 .where(f'symbol="{symbol}"')
                 .where(f'exchange="{exchange.value}"')
                 .where(f'interval="{interval.value}"')
+                .where(f'adjust="{ADJUST}"')
                 .toDF()
             )
 
@@ -139,6 +146,7 @@ class DolphindbDatabase(BaseDatabase):
             "symbol": symbol,
             "exchange": exchange.value,
             "interval": interval.value,
+            "adjust": ADJUST,
             "count": count,
             "start": start,
             "end": end,
@@ -300,6 +308,7 @@ class DolphindbDatabase(BaseDatabase):
             .where(f'symbol="{symbol}"')
             .where(f'exchange="{exchange.value}"')
             .where(f'interval="{interval.value}"')
+            .where(f'adjust="{ADJUST}"')
             .where(f'datetime>={start}')
             .where(f'datetime<={end}')
             .toDF()
@@ -429,6 +438,7 @@ class DolphindbDatabase(BaseDatabase):
             .where(f'symbol="{symbol}"')
             .where(f'exchange="{exchange.value}"')
             .where(f'interval="{interval.value}"')
+            .where(f'adjust="{ADJUST}"')
             .toDF()
         )
         count: int = df["count"][0]
@@ -439,6 +449,7 @@ class DolphindbDatabase(BaseDatabase):
             .where(f'symbol="{symbol}"')
             .where(f'exchange="{exchange.value}"')
             .where(f'interval="{interval.value}"')
+            .where(f'adjust="{ADJUST}"')
             .execute()
         )
 
@@ -449,6 +460,7 @@ class DolphindbDatabase(BaseDatabase):
             .where(f'symbol="{symbol}"')
             .where(f'exchange="{exchange.value}"')
             .where(f'interval="{interval.value}"')
+            .where(f'adjust="{ADJUST}"')
             .execute()
         )
 
@@ -494,7 +506,11 @@ class DolphindbDatabase(BaseDatabase):
     def get_bar_overview(self) -> list[BarOverview]:
         """"查询数据库中的K线汇总信息"""
         table: ddb.Table = self.session.loadTable(tableName="baroverview", dbPath=self.db_path)
-        df: pd.DataFrame = table.select('*').toDF()
+        df: pd.DataFrame = (
+            table.select('*')
+            .where(f'adjust="{ADJUST}"')
+            .toDF()
+        )
 
         overviews: list[BarOverview] = []
 
