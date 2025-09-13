@@ -28,6 +28,7 @@ ADJUST = SETTINGS["data.adjust"]
 if ADJUST not in ["", "qfq", "hfq"]:
     valid_options = "'qfq' (前复权) or 'hfq' (后复权) or '' (不复权)"
     raise ValueError(f"无效的数据复权类型: '{ADJUST}'。请使用 {valid_options}")
+OVERVIEW_TIME = np.datetime64(datetime(1989, 1, 1))
 
 class DolphindbDatabase(BaseDatabase):
     """DolphinDB数据库接口"""
@@ -140,7 +141,7 @@ class DolphindbDatabase(BaseDatabase):
         # 更新K线汇总数据
         data: list[dict] = []
 
-        dt: np.datetime64 = np.datetime64(datetime(2022, 1, 1))    # 该时间戳仅用于分区
+        dt: np.datetime64 = OVERVIEW_TIME    # 该时间戳仅用于分区
 
         d: dict = {
             "symbol": symbol,
@@ -158,6 +159,99 @@ class DolphindbDatabase(BaseDatabase):
 
         appender: ddb.PartitionedTableAppender = ddb.PartitionedTableAppender(self.db_path, "baroverview", "datetime", self.pool)
         appender.append(df)
+
+        return True
+
+    def save_bar_data_batch(self, bars_batch: list[list[BarData]]) -> bool:
+        """批量保存多组K线数据"""
+        if not bars_batch:
+            return True
+
+        # 准备批量数据
+        all_bar_data = []  # 所有K线数据
+        overview_updates = (
+            {}
+        )  # 需要更新的汇总信息 {(symbol, exchange, interval, adjust): (begin_dt, end_dt)}
+
+        # 按唯一键分组处理
+        for bars in bars_batch:
+            if not bars:
+                continue
+
+            bar: BarData = bars[0]
+            symbol: str = bar.symbol
+            exchange: Exchange = bar.exchange
+            interval: Interval = bar.interval
+            adjust: str = ADJUST
+
+            key = (symbol, exchange.value, interval.value, adjust)
+
+            # 转换为DataFrame数据
+            data: list[dict] = []
+            for bar in bars:
+                dt: np.datetime64 = np.datetime64(convert_tz(bar.datetime))
+
+                d: dict = {
+                    "symbol": symbol,
+                    "exchange": exchange.value,
+                    "datetime": dt,
+                    "interval": interval.value,
+                    "adjust": adjust,
+                    "volume": float(bar.volume),
+                    "turnover": float(bar.turnover),
+                    "open_interest": float(bar.open_interest),
+                    "open_price": float(bar.open_price),
+                    "high_price": float(bar.high_price),
+                    "low_price": float(bar.low_price),
+                    "close_price": float(bar.close_price),
+                }
+                data.append(d)
+
+            all_bar_data.extend(data)
+
+            # 记录每个key对应的bars信息和时间范围
+            begin_dt: datetime = np.datetime64(convert_tz(bars[0].datetime))
+            end_dt: datetime = np.datetime64(convert_tz(bars[-1].datetime))
+            overview_updates[key] = (len(bars), begin_dt, end_dt)
+
+        # 批量写入所有K线数据
+        if all_bar_data:
+            df: pd.DataFrame = pd.DataFrame.from_records(all_bar_data)
+            appender: ddb.PartitionedTableAppender = ddb.PartitionedTableAppender(
+                self.db_path, "bar", "datetime", self.pool
+            )
+            appender.append(df)
+            del all_bar_data, df
+            gc.collect()
+
+        # 如果没有需要更新的汇总信息，直接返回
+        if not overview_updates:
+            return True
+
+        # 构建查询条件
+        where_conditions = []
+        for key in overview_updates.keys():
+            symbol, exchange, interval, adjust = key
+            condition = f'(symbol="{symbol}" and exchange="{exchange}" and interval="{interval}" and adjust="{adjust}")'
+            where_conditions.append(condition)
+
+        where_clause = " or ".join(where_conditions)
+
+        # SQL语句构造
+        select = "symbol, exchange, interval, adjust, count(*) as count, \
+            min(datetime) as min_datetime, max(datetime) as max_datetime"
+        groupby = "symbol, exchange, interval, adjust"
+
+        bar_table: ddb.Table = self.session.loadTable(tableName="bar", dbPath=self.db_path)
+        overview_df = bar_table.select(select).where(where_clause).groupby(groupby).toDF()
+        overview_df['datetime'] = OVERVIEW_TIME  # 该时间戳仅用于分区
+
+        appender: ddb.PartitionedTableAppender = ddb.PartitionedTableAppender(
+            self.db_path, "baroverview", "datetime", self.pool
+        )
+        appender.append(overview_df)
+        del overview_df
+        gc.collect()
 
         return True
 
@@ -266,7 +360,7 @@ class DolphindbDatabase(BaseDatabase):
         # 更新Tick汇总数据
         data: list[dict] = []
 
-        dt: np.datetime64 = np.datetime64(datetime(2022, 1, 1))    # 该时间戳仅用于分区
+        dt: np.datetime64 = OVERVIEW_TIME    # 该时间戳仅用于分区
 
         d: dict = {
             "symbol": symbol,
